@@ -5,12 +5,15 @@ import sys
 import tempfile
 import urllib.request
 import zipfile
+import ctypes
 
 
 IS_FROZEN = getattr(sys, "frozen", False)
 APP_DIR = os.path.dirname(sys.executable) if IS_FROZEN else os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = getattr(sys, "_MEIPASS", APP_DIR)
 
 REPO_URL_FILE = os.path.join(APP_DIR, "bootstrap_repo_url.txt")
+FROZEN_REPO_URL_FILE = os.path.join(DATA_DIR, "bootstrap_repo_url.txt")
 DEFAULT_REPO_ZIP_URL = "https://github.com/YOUR_USERNAME/YOUR_REPO/archive/refs/heads/main.zip"
 
 REQUIRED_PATHS = [
@@ -41,6 +44,12 @@ def _read_repo_url():
             url = cfg_file.read().strip()
             if url:
                 return url
+
+    if os.path.exists(FROZEN_REPO_URL_FILE):
+        with open(FROZEN_REPO_URL_FILE, "r", encoding="utf-8") as cfg_file:
+            url = cfg_file.read().strip()
+            if url:
+                return url
     return DEFAULT_REPO_ZIP_URL
 
 
@@ -49,9 +58,9 @@ def _is_placeholder_url(url):
     return "your_username" in text or "your_repo" in text
 
 
-def _has_required_files():
+def _has_required_files(base_dir):
     for rel_path in REQUIRED_PATHS:
-        full_path = os.path.join(APP_DIR, rel_path)
+        full_path = os.path.join(base_dir, rel_path)
         if not os.path.exists(full_path):
             return False
     return True
@@ -105,7 +114,7 @@ def _download_repo_snapshot(repo_zip_url):
 
 
 def _ensure_project_files(force_update=False):
-    if not force_update and _has_required_files():
+    if not force_update and (_has_required_files(APP_DIR) or _has_required_files(DATA_DIR)):
         return
 
     repo_zip_url = _read_repo_url()
@@ -119,7 +128,7 @@ def _ensure_project_files(force_update=False):
 
     _download_repo_snapshot(repo_zip_url)
 
-    if not _has_required_files():
+    if not _has_required_files(APP_DIR):
         raise RuntimeError("Files are still missing after download. Check repository content.")
 
 
@@ -134,6 +143,8 @@ def _run_worker_if_requested():
 
     script_path = os.path.join(APP_DIR, target_name)
     if not os.path.exists(script_path):
+        script_path = os.path.join(DATA_DIR, target_name)
+    if not os.path.exists(script_path):
         raise RuntimeError(f"Worker script not found: {target_name}")
 
     if APP_DIR not in sys.path:
@@ -145,6 +156,8 @@ def _run_worker_if_requested():
 
 def _run_gui():
     gui_path = os.path.join(APP_DIR, "LenivayaFigna.py")
+    if not os.path.exists(gui_path):
+        gui_path = os.path.join(DATA_DIR, "LenivayaFigna.py")
     if not os.path.exists(gui_path):
         raise RuntimeError("LenivayaFigna.py not found.")
 
@@ -164,5 +177,16 @@ def main():
     _run_gui()
 
 
+def _show_error_message(text):
+    try:
+        ctypes.windll.user32.MessageBoxW(None, str(text), "LenivayaFigna - Error", 0x10)
+    except Exception:
+        print(text)
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        _show_error_message(f"Startup error:\n{error}")
+        raise

@@ -17,11 +17,18 @@ except Exception:
 
 IS_FROZEN = getattr(sys, "frozen", False)
 APP_DIR = os.path.dirname(sys.executable) if IS_FROZEN else os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = getattr(sys, "_MEIPASS", APP_DIR)
 
-POSITION_SCRIPT = os.path.join(APP_DIR, "Position.py")
-WINTER_SCRIPT = os.path.join(APP_DIR, "Winter_Event.py")
+POSITION_SCRIPT = os.path.join(DATA_DIR, "Position.py")
+WINTER_SCRIPT = os.path.join(DATA_DIR, "Winter_Event.py")
 
 BACKGROUND_CANDIDATES = [
+    os.path.join(DATA_DIR, "Resources", "ui_background.png"),
+    os.path.join(DATA_DIR, "Resources", "ui_background.jpg"),
+    os.path.join(DATA_DIR, "Resources", "ui_background.jpeg"),
+    os.path.join(DATA_DIR, "Resources", "background.png"),
+    os.path.join(DATA_DIR, "Resources", "background.jpg"),
+    os.path.join(DATA_DIR, "Resources", "background.jpeg"),
     os.path.join(APP_DIR, "Resources", "ui_background.png"),
     os.path.join(APP_DIR, "Resources", "ui_background.jpg"),
     os.path.join(APP_DIR, "Resources", "ui_background.jpeg"),
@@ -31,12 +38,18 @@ BACKGROUND_CANDIDATES = [
 ]
 
 GUIDE_CANDIDATES = [
+    os.path.join(DATA_DIR, "Resources", "image1.png"),
+    os.path.join(DATA_DIR, "Resources", "image1.jpg"),
+    os.path.join(DATA_DIR, "Resources", "image1.jpeg"),
     os.path.join(APP_DIR, "Resources", "image1.png"),
     os.path.join(APP_DIR, "Resources", "image1.jpg"),
     os.path.join(APP_DIR, "Resources", "image1.jpeg"),
 ]
 
 SPLASH_CANDIDATES = [
+    os.path.join(DATA_DIR, "Resources", "start.png"),
+    os.path.join(DATA_DIR, "Resources", "start.jpg"),
+    os.path.join(DATA_DIR, "Resources", "start.jpeg"),
     os.path.join(APP_DIR, "Resources", "start.png"),
     os.path.join(APP_DIR, "Resources", "start.jpg"),
     os.path.join(APP_DIR, "Resources", "start.jpeg"),
