@@ -44,7 +44,7 @@ if errorlevel 1 (
 if errorlevel 1 goto :pip_missing
 
 echo [2/6] Installing build tools (PyInstaller)...
-"%PY%" -m pip install --upgrade pip pyinstaller pillow requests keyboard pyautogui pydirectinput pygetwindow
+"%PY%" -m pip install --upgrade pip pyinstaller pillow requests keyboard pyautogui pydirectinput pygetwindow numpy opencv-python pytesseract pywin32 comtypes
 if errorlevel 1 goto :pip_error
 
 echo [3/6] Cleaning old build folders...
@@ -65,6 +65,12 @@ echo [4/6] Building EXE...
   --hidden-import Tools.botTools ^
   --hidden-import Tools.winTools ^
   --hidden-import Tools.avMethods ^
+  --hidden-import numpy ^
+  --hidden-import cv2 ^
+  --hidden-import pytesseract ^
+  --collect-all numpy ^
+  --collect-all cv2 ^
+  --collect-all pytesseract ^
   --add-data "Main.py;." ^
   --add-data "Position.py;." ^
   --add-data "Winter_Event.py;." ^

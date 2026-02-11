@@ -22,7 +22,7 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pyinstaller pillow requests keyboard pyautogui pydirectinput pygetwindow
+          python -m pip install pyinstaller pillow requests keyboard pyautogui pydirectinput pygetwindow numpy opencv-python pytesseract pywin32 comtypes
 
       - name: Build executable
         shell: pwsh
@@ -39,6 +39,12 @@ jobs:
             --hidden-import Tools.botTools `
             --hidden-import Tools.winTools `
             --hidden-import Tools.avMethods `
+            --hidden-import numpy `
+            --hidden-import cv2 `
+            --hidden-import pytesseract `
+            --collect-all numpy `
+            --collect-all cv2 `
+            --collect-all pytesseract `
             --add-data "Main.py;." `
             --add-data "Position.py;." `
             --add-data "Winter_Event.py;." `

@@ -67,20 +67,29 @@ def run_file_check(print_fn=print):
     print_fn(f"tesseract Folder, Exists: {os.path.exists(os.path.join(Main_Folder, 'tesseract'))}")
 
 
-def perform_updates(get_winter: bool, get_resources: bool, timeout: int = 60):
+def perform_updates(
+    get_winter: bool,
+    get_resources: bool,
+    timeout: int = 60,
+    preserve_local_winter: bool = False,
+):
     result = {
         "updated_winter": False,
         "updated_resources": False,
+        "skipped_winter": False,
         "error": None,
     }
     try:
         if get_winter:
-            with requests.get(winter_event_url, stream=True, timeout=timeout) as req:
-                req.raise_for_status()
-                with open(winter_event_path, "wb") as file:
-                    for chunk in req.iter_content(chunk_size=8192):
-                        file.write(chunk)
-            result["updated_winter"] = True
+            if preserve_local_winter and os.path.exists(winter_event_path):
+                result["skipped_winter"] = True
+            else:
+                with requests.get(winter_event_url, stream=True, timeout=timeout) as req:
+                    req.raise_for_status()
+                    with open(winter_event_path, "wb") as file:
+                        for chunk in req.iter_content(chunk_size=8192):
+                            file.write(chunk)
+                result["updated_winter"] = True
 
         if get_resources:
             with requests.get(images_url, stream=True, timeout=timeout) as req:
@@ -98,7 +107,12 @@ def perform_updates(get_winter: bool, get_resources: bool, timeout: int = 60):
     return result
 
 
-def run_update_flow(auto_confirm: bool = False, print_fn=print, input_fn=input):
+def run_update_flow(
+    auto_confirm: bool = False,
+    preserve_local_winter: bool = False,
+    print_fn=print,
+    input_fn=input,
+):
     get_winter = False
     get_resources = False
 
@@ -107,31 +121,36 @@ def run_update_flow(auto_confirm: bool = False, print_fn=print, input_fn=input):
         cur_ver = get_cur_ver("Winter_Event.py")
         new_ver = get_newest_ver()
 
-        if cur_ver == new_ver:
-            if auto_confirm:
-                get_winter = True
-                get_resources = True
-            else:
-                print_fn("It looks like your winter_event.py is update to date would you like to replace it? [Y/N]")
-                a = input_fn(">")
-                if isinstance(a, str) and a.lower() == "y":
-                    get_winter = True
-
-                print_fn("would you want to update resources? (Y/N)")
-                b = input_fn(">")
-                if isinstance(b, str) and b.lower() == "y":
-                    get_resources = True
+        if auto_confirm and preserve_local_winter:
+            get_winter = False
+            get_resources = True
+            print_fn("Preserve mode: local Winter_Event.py will not be replaced.")
         else:
-            print_fn(f"Your winter_event.py is out of dated! n:{new_ver} | c:{cur_ver}")
-            if auto_confirm:
-                get_winter = True
-                get_resources = True
-            else:
-                print_fn("Would you like to update? This will also update resources. [Y/N]")
-                a = input_fn(">")
-                if isinstance(a, str) and a.lower() == "y":
+            if cur_ver == new_ver:
+                if auto_confirm:
                     get_winter = True
                     get_resources = True
+                else:
+                    print_fn("It looks like your winter_event.py is update to date would you like to replace it? [Y/N]")
+                    a = input_fn(">")
+                    if isinstance(a, str) and a.lower() == "y":
+                        get_winter = True
+
+                    print_fn("would you want to update resources? (Y/N)")
+                    b = input_fn(">")
+                    if isinstance(b, str) and b.lower() == "y":
+                        get_resources = True
+            else:
+                print_fn(f"Your winter_event.py is out of dated! n:{new_ver} | c:{cur_ver}")
+                if auto_confirm:
+                    get_winter = True
+                    get_resources = True
+                else:
+                    print_fn("Would you like to update? This will also update resources. [Y/N]")
+                    a = input_fn(">")
+                    if isinstance(a, str) and a.lower() == "y":
+                        get_winter = True
+                        get_resources = True
     else:
         if auto_confirm:
             get_winter = True
@@ -143,7 +162,11 @@ def run_update_flow(auto_confirm: bool = False, print_fn=print, input_fn=input):
                 get_winter = True
                 get_resources = True
 
-    result = perform_updates(get_winter=get_winter, get_resources=get_resources)
+    result = perform_updates(
+        get_winter=get_winter,
+        get_resources=get_resources,
+        preserve_local_winter=preserve_local_winter,
+    )
     if result["error"]:
         print_fn(result["error"])
     elif not get_winter and not get_resources:
