@@ -47,21 +47,21 @@ def run_file_check(print_fn=print):
 
     print_fn(f"Settings Folder: {os.path.join(Main_Folder, 'Settings')}")
     print_fn(
-        f"Winter_Event.json, Exists: {os.path.exists(os.path.join(Main_Folder, 'Settings\\Winter_Event.json'))}"
+        f"Winter_Event.json, Exists: {os.path.exists(os.path.join(Main_Folder, 'Settings', 'Winter_Event.json'))}"
     )
 
     print_fn(f"Utility Folder: {os.path.join(Main_Folder, 'Utility')}")
     print_fn(
-        f"mouseDebugging.py, Exists: {os.path.exists(os.path.join(Main_Folder, 'Utility\\mouseDebugging.py'))}"
+        f"mouseDebugging.py, Exists: {os.path.exists(os.path.join(Main_Folder, 'Utility', 'mouseDebugging.py'))}"
     )
     print_fn(
-        f"SettingsHelper.py, Exists: {os.path.exists(os.path.join(Main_Folder, 'Utility\\SettingsHelper.py'))}"
+        f"SettingsHelper.py, Exists: {os.path.exists(os.path.join(Main_Folder, 'Utility', 'SettingsHelper.py'))}"
     )
 
     print_fn(f"Tools Folder: {os.path.join(Main_Folder, 'Tools')}")
-    print_fn(f"avMethods.py, Exists: {os.path.exists(os.path.join(Main_Folder, 'Tools\\avMethods.py'))}")
-    print_fn(f"botTools.py, Exists: {os.path.exists(os.path.join(Main_Folder, 'Tools\\botTools.py'))}")
-    print_fn(f"winTools.py, Exists: {os.path.exists(os.path.join(Main_Folder, 'Tools\\winTools.py'))}")
+    print_fn(f"avMethods.py, Exists: {os.path.exists(os.path.join(Main_Folder, 'Tools', 'avMethods.py'))}")
+    print_fn(f"botTools.py, Exists: {os.path.exists(os.path.join(Main_Folder, 'Tools', 'botTools.py'))}")
+    print_fn(f"winTools.py, Exists: {os.path.exists(os.path.join(Main_Folder, 'Tools', 'winTools.py'))}")
 
     print_fn(f"Resources Folder, Exists: {os.path.exists(os.path.join(Main_Folder, 'Resources'))}")
     print_fn(f"tesseract Folder, Exists: {os.path.exists(os.path.join(Main_Folder, 'tesseract'))}")
