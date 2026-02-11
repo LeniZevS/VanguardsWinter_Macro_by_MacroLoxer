@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 import zipfile
 
@@ -36,6 +37,33 @@ def get_newest_ver(timeout: int = 20):
             newest_ver = line
             break
     return newest_ver
+
+
+def extract_version_number(version_line: str | None):
+    if not version_line:
+        return None
+    match = re.search(r"VERSION_N\s*=\s*['\"]([^'\"]+)['\"]", version_line)
+    if match:
+        return match.group(1).strip()
+    return str(version_line).strip()
+
+
+def get_version_info(timeout: int = 20, target: str = "Winter_Event.py"):
+    current_line = get_cur_ver(target)
+    latest_line = None
+    error = None
+    try:
+        latest_line = get_newest_ver(timeout=timeout)
+    except Exception as fetch_error:
+        error = str(fetch_error)
+
+    return {
+        "current_line": current_line,
+        "latest_line": latest_line,
+        "current_version": extract_version_number(current_line),
+        "latest_version": extract_version_number(latest_line),
+        "error": error,
+    }
 
 
 def run_file_check(print_fn=print):
@@ -115,18 +143,44 @@ def run_update_flow(
 ):
     get_winter = False
     get_resources = False
+    version_info = get_version_info()
+    cur_ver_line = version_info.get("current_line")
+    new_ver_line = version_info.get("latest_line")
+    cur_ver = version_info.get("current_version")
+    new_ver = version_info.get("latest_version")
+
+    result = {
+        "updated_winter": False,
+        "updated_resources": False,
+        "skipped_winter": False,
+        "error": None,
+        "current_version_line": cur_ver_line,
+        "latest_version_line": new_ver_line,
+        "current_version": cur_ver,
+        "latest_version": new_ver,
+        "post_update_version": None,
+    }
 
     if os.path.exists(winter_event_path):
         print_fn("It looks like you already have the files")
-        cur_ver = get_cur_ver("Winter_Event.py")
-        new_ver = get_newest_ver()
+        print_fn(f"Current version: {cur_ver or 'unknown'}")
+        print_fn(f"Latest version: {new_ver or 'unknown'}")
+        if version_info.get("error"):
+            print_fn(f"Version check warning: {version_info['error']}")
 
         if auto_confirm and preserve_local_winter:
             get_winter = False
             get_resources = True
             print_fn("Preserve mode: local Winter_Event.py will not be replaced.")
         else:
-            if cur_ver == new_ver:
+            if auto_confirm:
+                get_resources = True
+                if preserve_local_winter:
+                    get_winter = False
+                else:
+                    # Download Winter_Event.py only when remote version is newer/different.
+                    get_winter = (new_ver is None) or (cur_ver != new_ver)
+            elif cur_ver == new_ver:
                 if auto_confirm:
                     get_winter = True
                     get_resources = True
@@ -162,15 +216,20 @@ def run_update_flow(
                 get_winter = True
                 get_resources = True
 
-    result = perform_updates(
+    update_result = perform_updates(
         get_winter=get_winter,
         get_resources=get_resources,
         preserve_local_winter=preserve_local_winter,
     )
+    result.update(update_result)
+    result["post_update_version"] = extract_version_number(get_cur_ver("Winter_Event.py"))
+
     if result["error"]:
         print_fn(result["error"])
     elif not get_winter and not get_resources:
         print_fn("No update actions selected.")
+    elif get_resources and not get_winter and cur_ver == new_ver:
+        print_fn("Winter_Event.py is already up to date. Resources updated.")
     else:
         print_fn("Update finished.")
     return result

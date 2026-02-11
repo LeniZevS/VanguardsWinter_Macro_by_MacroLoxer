@@ -1,4 +1,5 @@
-﻿import glob
+import glob
+import json
 import os
 import runpy
 import subprocess
@@ -29,6 +30,18 @@ TITLE_FG = "#EFF5FF"
 MUTED_FG = "#C8D2E2"
 
 CREDIT_LINK = "https://www.youtube.com/@macroLoxer"
+
+UI_SETTINGS_PATH = os.path.join(APP_DIR, "Settings", "UI_Settings.json")
+ALLOWED_HOTKEYS = [f"F{i}" for i in range(1, 13)]
+DEFAULT_UI_SETTINGS = {
+    "position_hotkey": "F1",
+    "start_hotkey": "F5",
+    "stop_hotkey": "F6",
+    "menu_bg_color": "#090C12",
+    "menu_border_color": "#9AA8BC",
+    "window_bg_color": "#030405",
+    "background_image": "",
+}
 
 INSTRUCTION_TEXT = {
     "EN": (
@@ -63,7 +76,17 @@ def _is_python_executable(path):
 
 
 def _resolve_python(windowless=False):
-    version_dirs = sorted(glob.glob(os.path.join(APP_DIR, "Python", "python*")), reverse=True)
+    search_roots = [APP_DIR]
+    if DATA_DIR not in search_roots:
+        search_roots.append(DATA_DIR)
+    py_meipass_root = os.path.dirname(DATA_DIR)
+    if py_meipass_root not in search_roots:
+        search_roots.append(py_meipass_root)
+
+    version_dirs = []
+    for root in search_roots:
+        version_dirs.extend(glob.glob(os.path.join(root, "Python", "python*")))
+    version_dirs = sorted(set(version_dirs), reverse=True)
     exe_name = "pythonw.exe" if windowless else "python.exe"
     for version_dir in version_dirs:
         candidate = os.path.join(version_dir, exe_name)
@@ -120,10 +143,17 @@ def _maybe_run_worker_script():
 class LenivayaFignaApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.ui_settings = self._load_ui_settings()
+        self.position_hotkey = self.ui_settings["position_hotkey"]
+        self.start_hotkey = self.ui_settings["start_hotkey"]
+        self.stop_hotkey = self.ui_settings["stop_hotkey"]
+        self.menu_bg_color = self.ui_settings["menu_bg_color"]
+        self.menu_border_color = self.ui_settings["menu_border_color"]
+        self.window_bg_color = self.ui_settings["window_bg_color"]
         self.title("LenivayaFigna")
         self.geometry("1100x700")
         self.minsize(980, 620)
-        self.configure(bg="#030405")
+        self.configure(bg=self.window_bg_color)
 
         self.python_exe = _resolve_python(windowless=False)
         self.pythonw_exe = _resolve_python(windowless=True)
@@ -135,9 +165,18 @@ class LenivayaFignaApp(tk.Tk):
         self.update_thread = None
         self.global_hotkeys = []
 
-        self.background_path = _first_existing(_find_image_candidates("ui_background")) or _first_existing(
-            _find_image_candidates("background")
-        )
+        custom_bg = self.ui_settings.get("background_image", "").strip()
+        self.background_path = None
+        if custom_bg:
+            bg_path = custom_bg
+            if not os.path.isabs(bg_path):
+                bg_path = os.path.join(APP_DIR, bg_path)
+            if os.path.exists(bg_path):
+                self.background_path = bg_path
+        if not self.background_path:
+            self.background_path = _first_existing(_find_image_candidates("ui_background")) or _first_existing(
+                _find_image_candidates("background")
+            )
         self.splash_path = _first_existing(_find_image_candidates("start"))
         self.instruction_images = self._collect_instruction_images()
 
@@ -152,6 +191,13 @@ class LenivayaFignaApp(tk.Tk):
         self.instruction_index = 0
         self.instruction_photo = None
         self.instruction_pil_cache = {}
+        self.settings_window = None
+        self.settings_save_button = None
+        self.settings_error_label = None
+        self.settings_entries = {}
+        self.hotkey_vars = {}
+        self.color_vars = {}
+        self.custom_background_var = None
 
         self._build_ui()
         self._register_hotkeys()
@@ -162,7 +208,8 @@ class LenivayaFignaApp(tk.Tk):
     def _collect_instruction_images(self):
         images = []
         seen = set()
-        for idx in range(1, 5):
+        # Requested order: image2 -> image3 -> image4 -> image1
+        for idx in (2, 3, 4, 1):
             for path in _find_image_candidates(f"image{idx}"):
                 if os.path.exists(path):
                     normalized = os.path.normcase(os.path.abspath(path))
@@ -172,8 +219,90 @@ class LenivayaFignaApp(tk.Tk):
                     break
         return images
 
+    def _normalize_hotkey(self, value):
+        normalized = str(value).strip().upper()
+        return normalized
+
+    def _is_valid_hex_color(self, value):
+        if not isinstance(value, str):
+            return False
+        text = value.strip()
+        if len(text) != 7 or not text.startswith("#"):
+            return False
+        try:
+            int(text[1:], 16)
+            return True
+        except ValueError:
+            return False
+
+    def _load_ui_settings(self):
+        settings = dict(DEFAULT_UI_SETTINGS)
+        try:
+            if os.path.exists(UI_SETTINGS_PATH):
+                with open(UI_SETTINGS_PATH, "r", encoding="utf-8") as settings_file:
+                    data = json.load(settings_file)
+                if isinstance(data, dict):
+                    settings.update(data)
+        except Exception:
+            pass
+
+        settings["position_hotkey"] = self._normalize_hotkey(settings.get("position_hotkey", "F1"))
+        settings["start_hotkey"] = self._normalize_hotkey(settings.get("start_hotkey", "F5"))
+        settings["stop_hotkey"] = self._normalize_hotkey(settings.get("stop_hotkey", "F6"))
+
+        for key, default in (
+            ("menu_bg_color", DEFAULT_UI_SETTINGS["menu_bg_color"]),
+            ("menu_border_color", DEFAULT_UI_SETTINGS["menu_border_color"]),
+            ("window_bg_color", DEFAULT_UI_SETTINGS["window_bg_color"]),
+        ):
+            color_value = str(settings.get(key, default)).strip()
+            settings[key] = color_value if self._is_valid_hex_color(color_value) else default
+
+        settings["background_image"] = str(settings.get("background_image", "")).strip()
+
+        if settings["position_hotkey"] not in ALLOWED_HOTKEYS:
+            settings["position_hotkey"] = DEFAULT_UI_SETTINGS["position_hotkey"]
+        if settings["start_hotkey"] not in ALLOWED_HOTKEYS:
+            settings["start_hotkey"] = DEFAULT_UI_SETTINGS["start_hotkey"]
+        if settings["stop_hotkey"] not in ALLOWED_HOTKEYS:
+            settings["stop_hotkey"] = DEFAULT_UI_SETTINGS["stop_hotkey"]
+
+        key_set = {
+            settings["position_hotkey"],
+            settings["start_hotkey"],
+            settings["stop_hotkey"],
+        }
+        if len(key_set) != 3:
+            settings["position_hotkey"] = DEFAULT_UI_SETTINGS["position_hotkey"]
+            settings["start_hotkey"] = DEFAULT_UI_SETTINGS["start_hotkey"]
+            settings["stop_hotkey"] = DEFAULT_UI_SETTINGS["stop_hotkey"]
+
+        return settings
+
+    def _hotkeys_hint_text(self):
+        return (
+            f"{self.position_hotkey} - Position\n"
+            f"{self.start_hotkey} - Start\n"
+            f"{self.stop_hotkey} - Stop"
+        )
+
+    def _restart_application(self):
+        try:
+            if IS_FROZEN:
+                command = [sys.executable]
+            else:
+                main_path = os.path.join(APP_DIR, "Main.py")
+                if os.path.exists(main_path):
+                    command = [self.python_exe if _is_python_executable(self.python_exe) else sys.executable, main_path]
+                else:
+                    command = [self.python_exe if _is_python_executable(self.python_exe) else sys.executable, os.path.abspath(__file__)]
+            subprocess.Popen(command, cwd=APP_DIR, creationflags=self.create_no_window)
+        except Exception:
+            pass
+        self._on_close()
+
     def _build_ui(self):
-        self.bg_label = tk.Label(self, bg="#030405")
+        self.bg_label = tk.Label(self, bg=self.window_bg_color)
         self.bg_label.place(relx=0, rely=0, relwidth=1, relheight=1)
         self._load_background()
 
@@ -183,8 +312,8 @@ class LenivayaFignaApp(tk.Tk):
 
         self.left_panel = tk.Frame(
             self,
-            bg=CARD_BG,
-            highlightbackground=CARD_BORDER,
+            bg=self.menu_bg_color,
+            highlightbackground=self.menu_border_color,
             highlightthickness=1,
             bd=0,
         )
@@ -192,8 +321,8 @@ class LenivayaFignaApp(tk.Tk):
 
         self.right_panel = tk.Frame(
             self,
-            bg=CARD_BG,
-            highlightbackground=CARD_BORDER,
+            bg=self.menu_bg_color,
+            highlightbackground=self.menu_border_color,
             highlightthickness=1,
             bd=0,
         )
@@ -205,7 +334,7 @@ class LenivayaFignaApp(tk.Tk):
             self.left_panel,
             text="LenivayaFigna",
             fg=TITLE_FG,
-            bg=CARD_BG,
+            bg=self.menu_bg_color,
             font=("Segoe UI", 21, "bold"),
         )
         title_label.pack(anchor="w", padx=16, pady=(14, 8))
@@ -214,7 +343,7 @@ class LenivayaFignaApp(tk.Tk):
             self.left_panel,
             text="Roblox Winter Event Control",
             fg=MUTED_FG,
-            bg=CARD_BG,
+            bg=self.menu_bg_color,
             font=("Segoe UI", 10),
         )
         subtitle.pack(anchor="w", padx=16, pady=(0, 12))
@@ -255,6 +384,15 @@ class LenivayaFignaApp(tk.Tk):
         )
         self.instruction_button.pack(anchor="w", padx=16, pady=(12, 6))
 
+        self.settings_button = self._make_button(
+            parent=self.left_panel,
+            label="Settings",
+            command=self.open_settings_window,
+            bg="#5B4E89",
+            active="#463A6E",
+        )
+        self.settings_button.pack(anchor="w", padx=16, pady=6)
+
         self.credit_button = tk.Button(
             self.left_panel,
             text="Credit",
@@ -277,7 +415,7 @@ class LenivayaFignaApp(tk.Tk):
             self.left_panel,
             text="Ready.",
             fg=MUTED_FG,
-            bg=CARD_BG,
+            bg=self.menu_bg_color,
             font=("Segoe UI", 10),
             wraplength=250,
             justify="left",
@@ -288,7 +426,7 @@ class LenivayaFignaApp(tk.Tk):
             self.right_panel,
             text="Terminal",
             fg=TITLE_FG,
-            bg=CARD_BG,
+            bg=self.menu_bg_color,
             font=("Segoe UI", 16, "bold"),
         )
         right_title.grid(row=0, column=0, sticky="w", padx=14, pady=(12, 6))
@@ -296,7 +434,7 @@ class LenivayaFignaApp(tk.Tk):
         terminal_wrap = tk.Frame(
             self.right_panel,
             bg="#0A0E16",
-            highlightbackground=CARD_BORDER,
+            highlightbackground=self.menu_border_color,
             highlightthickness=1,
             bd=0,
         )
@@ -325,15 +463,15 @@ class LenivayaFignaApp(tk.Tk):
 
         self._append_terminal_line("Terminal ready.")
 
-        bind_label = tk.Label(
+        self.bind_label = tk.Label(
             self,
-            text="F1 - Position\nF2 - Start\nF3 - Stop",
+            text=self._hotkeys_hint_text(),
             fg="#DCE5F5",
-            bg="#030405",
+            bg=self.window_bg_color,
             font=("Consolas", 10),
             justify="right",
         )
-        bind_label.place(relx=1.0, rely=1.0, x=-24, y=-18, anchor="se")
+        self.bind_label.place(relx=1.0, rely=1.0, x=-24, y=-18, anchor="se")
 
     def _make_button(self, parent, label, command, bg, active):
         return tk.Button(
@@ -472,14 +610,14 @@ class LenivayaFignaApp(tk.Tk):
         window.title("Credit")
         window.geometry("430x170")
         window.resizable(False, False)
-        window.configure(bg=CARD_BG)
+        window.configure(bg=self.menu_bg_color)
         window.transient(self)
 
         tk.Label(
             window,
             text="UI: LeniZev",
             fg=TITLE_FG,
-            bg=CARD_BG,
+            bg=self.menu_bg_color,
             font=("Segoe UI", 11, "bold"),
         ).pack(anchor="w", padx=16, pady=(14, 8))
 
@@ -487,7 +625,7 @@ class LenivayaFignaApp(tk.Tk):
             window,
             text="Original macro creator: MacroLoxer",
             fg=MUTED_FG,
-            bg=CARD_BG,
+            bg=self.menu_bg_color,
             font=("Segoe UI", 10),
         ).pack(anchor="w", padx=16, pady=(0, 8))
 
@@ -495,12 +633,210 @@ class LenivayaFignaApp(tk.Tk):
             window,
             text=CREDIT_LINK,
             fg="#7FB4FF",
-            bg=CARD_BG,
+            bg=self.menu_bg_color,
             cursor="hand2",
             font=("Segoe UI", 10, "underline"),
         )
         link.pack(anchor="w", padx=16)
         link.bind("<Button-1>", lambda _event: webbrowser.open(CREDIT_LINK))
+
+    def open_settings_window(self):
+        if self.settings_window is not None and self.settings_window.winfo_exists():
+            self.settings_window.deiconify()
+            self.settings_window.lift()
+            self._validate_settings_form()
+            return
+
+        window = tk.Toplevel(self)
+        window.title("Settings")
+        window.geometry("520x420")
+        window.resizable(False, False)
+        window.configure(bg=self.menu_bg_color)
+        window.transient(self)
+        window.protocol("WM_DELETE_WINDOW", self._close_settings_window)
+
+        self.settings_window = window
+        self.settings_entries = {}
+        self.hotkey_vars = {
+            "position_hotkey": tk.StringVar(value=self.position_hotkey),
+            "start_hotkey": tk.StringVar(value=self.start_hotkey),
+            "stop_hotkey": tk.StringVar(value=self.stop_hotkey),
+        }
+        self.color_vars = {
+            "menu_bg_color": tk.StringVar(value=self.menu_bg_color),
+            "menu_border_color": tk.StringVar(value=self.menu_border_color),
+            "window_bg_color": tk.StringVar(value=self.window_bg_color),
+        }
+        self.custom_background_var = tk.StringVar(value=self.ui_settings.get("background_image", ""))
+
+        tk.Label(
+            window,
+            text="Settings",
+            fg=TITLE_FG,
+            bg=self.menu_bg_color,
+            font=("Segoe UI", 16, "bold"),
+        ).pack(anchor="w", padx=14, pady=(12, 10))
+
+        form = tk.Frame(window, bg=self.menu_bg_color)
+        form.pack(fill="both", expand=True, padx=14)
+
+        row = 0
+
+        def add_entry(label_text, var, key_name):
+            nonlocal row
+            tk.Label(
+                form,
+                text=label_text,
+                fg=MUTED_FG,
+                bg=self.menu_bg_color,
+                font=("Segoe UI", 10),
+            ).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=6)
+            entry = tk.Entry(form, textvariable=var, width=28, font=("Consolas", 10))
+            entry.grid(row=row, column=1, sticky="ew", pady=6)
+            self.settings_entries[key_name] = entry
+            row += 1
+
+        add_entry("Position hotkey (F1-F12)", self.hotkey_vars["position_hotkey"], "position_hotkey")
+        add_entry("Start hotkey (F1-F12)", self.hotkey_vars["start_hotkey"], "start_hotkey")
+        add_entry("Stop hotkey (F1-F12)", self.hotkey_vars["stop_hotkey"], "stop_hotkey")
+        add_entry("Menu color (#RRGGBB)", self.color_vars["menu_bg_color"], "menu_bg_color")
+        add_entry("Menu border color (#RRGGBB)", self.color_vars["menu_border_color"], "menu_border_color")
+        add_entry("Window bg color (#RRGGBB)", self.color_vars["window_bg_color"], "window_bg_color")
+        add_entry("Custom background path (optional)", self.custom_background_var, "background_image")
+
+        form.grid_columnconfigure(1, weight=1)
+
+        for var in list(self.hotkey_vars.values()) + list(self.color_vars.values()) + [self.custom_background_var]:
+            var.trace_add("write", lambda *_args: self._validate_settings_form())
+
+        self.settings_error_label = tk.Label(
+            window,
+            text="",
+            fg="#F6C0C0",
+            bg=self.menu_bg_color,
+            justify="left",
+            font=("Segoe UI", 9),
+        )
+        self.settings_error_label.pack(fill="x", padx=14, pady=(6, 6))
+
+        footer = tk.Frame(window, bg=self.menu_bg_color)
+        footer.pack(fill="x", padx=14, pady=(0, 12))
+
+        self.settings_save_button = tk.Button(
+            footer,
+            text="Save",
+            width=12,
+            font=("Segoe UI", 10, "bold"),
+            command=self._save_settings,
+            bg="#2C8F63",
+            fg="white",
+            activebackground="#1F6B4A",
+            activeforeground="white",
+            relief="flat",
+            cursor="hand2",
+            bd=0,
+            padx=6,
+            pady=6,
+        )
+        self.settings_save_button.pack(side="right")
+
+        self._validate_settings_form()
+
+    def _close_settings_window(self):
+        if self.settings_window is not None and self.settings_window.winfo_exists():
+            self.settings_window.destroy()
+        self.settings_window = None
+        self.settings_save_button = None
+        self.settings_error_label = None
+        self.settings_entries = {}
+        self.hotkey_vars = {}
+        self.color_vars = {}
+        self.custom_background_var = None
+
+    def _set_entry_error(self, entry, has_error):
+        if entry is None:
+            return
+        if has_error:
+            entry.config(bg="#FFD7D7")
+        else:
+            entry.config(bg="white")
+
+    def _validate_settings_form(self):
+        if self.settings_window is None or not self.settings_window.winfo_exists():
+            return False
+
+        errors = []
+
+        hotkeys = {}
+        counts = {}
+        for key, var in self.hotkey_vars.items():
+            value = self._normalize_hotkey(var.get())
+            hotkeys[key] = value
+            counts[value] = counts.get(value, 0) + 1
+
+        for key, value in hotkeys.items():
+            invalid = value not in ALLOWED_HOTKEYS
+            duplicate = counts.get(value, 0) > 1
+            self._set_entry_error(self.settings_entries.get(key), invalid or duplicate)
+            if invalid:
+                errors.append(f"{key} must be one of: {', '.join(ALLOWED_HOTKEYS)}")
+            if duplicate:
+                errors.append("Hotkeys must be unique.")
+
+        for key, var in self.color_vars.items():
+            color_value = var.get().strip()
+            invalid_color = not self._is_valid_hex_color(color_value)
+            self._set_entry_error(self.settings_entries.get(key), invalid_color)
+            if invalid_color:
+                errors.append(f"{key} must be #RRGGBB.")
+
+        bg_value = self.custom_background_var.get().strip() if self.custom_background_var else ""
+        background_invalid = False
+        if bg_value:
+            candidate = bg_value if os.path.isabs(bg_value) else os.path.join(APP_DIR, bg_value)
+            background_invalid = not os.path.exists(candidate)
+        self._set_entry_error(self.settings_entries.get("background_image"), background_invalid)
+        if background_invalid:
+            errors.append("Custom background path does not exist.")
+
+        if errors:
+            if self.settings_error_label is not None:
+                self.settings_error_label.config(text=errors[0], fg="#F6C0C0")
+            if self.settings_save_button is not None:
+                self.settings_save_button.config(state="disabled")
+            return False
+
+        if self.settings_error_label is not None:
+            self.settings_error_label.config(text="Ready to save.", fg="#BFEBCF")
+        if self.settings_save_button is not None:
+            self.settings_save_button.config(state="normal")
+        return True
+
+    def _save_settings(self):
+        if not self._validate_settings_form():
+            return
+
+        background_value = self.custom_background_var.get().strip() if self.custom_background_var else ""
+        settings_to_save = {
+            "position_hotkey": self._normalize_hotkey(self.hotkey_vars["position_hotkey"].get()),
+            "start_hotkey": self._normalize_hotkey(self.hotkey_vars["start_hotkey"].get()),
+            "stop_hotkey": self._normalize_hotkey(self.hotkey_vars["stop_hotkey"].get()),
+            "menu_bg_color": self.color_vars["menu_bg_color"].get().strip(),
+            "menu_border_color": self.color_vars["menu_border_color"].get().strip(),
+            "window_bg_color": self.color_vars["window_bg_color"].get().strip(),
+            "background_image": background_value,
+        }
+
+        try:
+            os.makedirs(os.path.dirname(UI_SETTINGS_PATH), exist_ok=True)
+            with open(UI_SETTINGS_PATH, "w", encoding="utf-8") as settings_file:
+                json.dump(settings_to_save, settings_file, ensure_ascii=False, indent=2)
+            self._append_terminal_line("Settings saved. Restarting application...")
+            self._set_status("Settings saved. Restarting...")
+            self.after(250, self._restart_application)
+        except Exception as error:
+            self._append_terminal_line(f"Settings save error: {error}")
+            self._set_status(f"Settings save error: {error}")
 
     def open_instruction_window(self):
         if self.instruction_window is not None and self.instruction_window.winfo_exists():
@@ -513,25 +849,25 @@ class LenivayaFignaApp(tk.Tk):
         window.title("Instruction")
         window.geometry("980x760")
         window.minsize(860, 620)
-        window.configure(bg=CARD_BG)
+        window.configure(bg=self.menu_bg_color)
         window.transient(self)
         window.protocol("WM_DELETE_WINDOW", self._close_instruction_window)
 
-        top_frame = tk.Frame(window, bg=CARD_BG)
+        top_frame = tk.Frame(window, bg=self.menu_bg_color)
         top_frame.pack(fill="x", padx=14, pady=(14, 8))
 
         self.instruction_title_label = tk.Label(
             top_frame,
             text="Instruction",
             fg=TITLE_FG,
-            bg=CARD_BG,
+            bg=self.menu_bg_color,
             font=("Segoe UI", 16, "bold"),
         )
         self.instruction_title_label.pack(side="left")
 
         self.lang_button = tk.Button(
             top_frame,
-            text="Р СѓСЃСЃРєРёР№",
+            text="\u0420\u0443\u0441\u0441\u043a\u0438\u0439",
             width=10,
             command=self._toggle_instruction_language,
             bg="#355A8F",
@@ -551,7 +887,7 @@ class LenivayaFignaApp(tk.Tk):
             window,
             text="",
             fg=MUTED_FG,
-            bg=CARD_BG,
+            bg=self.menu_bg_color,
             justify="left",
             anchor="w",
             font=("Segoe UI", 11),
@@ -562,7 +898,7 @@ class LenivayaFignaApp(tk.Tk):
         image_frame = tk.Frame(
             window,
             bg="#0D1320",
-            highlightbackground=CARD_BORDER,
+            highlightbackground=self.menu_border_color,
             highlightthickness=1,
             bd=0,
         )
@@ -578,7 +914,7 @@ class LenivayaFignaApp(tk.Tk):
         )
         self.instruction_image_label.pack(fill="both", expand=True, padx=6, pady=6)
 
-        nav_frame = tk.Frame(window, bg=CARD_BG)
+        nav_frame = tk.Frame(window, bg=self.menu_bg_color)
         nav_frame.pack(fill="x", padx=16, pady=(0, 14))
 
         self.prev_image_button = tk.Button(
@@ -603,7 +939,7 @@ class LenivayaFignaApp(tk.Tk):
             nav_frame,
             text="0 / 0",
             fg=MUTED_FG,
-            bg=CARD_BG,
+            bg=self.menu_bg_color,
             font=("Segoe UI", 10, "bold"),
         )
         self.image_counter_label.pack(side="left", padx=14)
@@ -752,24 +1088,31 @@ class LenivayaFignaApp(tk.Tk):
             self._append_terminal_line_from_thread(f"[output error] {error}")
 
     def _register_hotkeys(self):
-        self.bind("<F1>", lambda _event: self.run_position())
-        self.bind("<F2>", lambda _event: self.start_winter_event())
-        self.bind("<F3>", lambda _event: self.stop_winter_event())
+        self.bind(f"<{self.position_hotkey}>", lambda _event: self.run_position())
+        self.bind(f"<{self.start_hotkey}>", lambda _event: self.start_winter_event())
+        self.bind(f"<{self.stop_hotkey}>", lambda _event: self.stop_winter_event())
 
         try:
             import keyboard
 
+            for hotkey in self.global_hotkeys:
+                try:
+                    keyboard.remove_hotkey(hotkey)
+                except Exception:
+                    pass
+            self.global_hotkeys = []
+
             self.global_hotkeys.append(
-                keyboard.add_hotkey("f1", lambda: self.after(0, self.run_position))
+                keyboard.add_hotkey(self.position_hotkey.lower(), lambda: self.after(0, self.run_position))
             )
             self.global_hotkeys.append(
-                keyboard.add_hotkey("f2", lambda: self.after(0, self.start_winter_event))
+                keyboard.add_hotkey(self.start_hotkey.lower(), lambda: self.after(0, self.start_winter_event))
             )
             self.global_hotkeys.append(
-                keyboard.add_hotkey("f3", lambda: self.after(0, self.stop_winter_event))
+                keyboard.add_hotkey(self.stop_hotkey.lower(), lambda: self.after(0, self.stop_winter_event))
             )
         except Exception:
-            self._set_status("Global F1/F2/F3 are unavailable. Window hotkeys still work.")
+            self._set_status("Global hotkeys are unavailable. Window hotkeys still work.")
 
     def _build_launch_command(self, script_path, capture_output=False):
         if capture_output and _is_python_executable(self.python_exe):
@@ -891,27 +1234,46 @@ class LenivayaFignaApp(tk.Tk):
             return
         self.check_update_button.config(state="disabled")
         self._append_terminal_line("CheckUpdate started...")
+        self._append_terminal_line(f"Source: {FileCheck.winter_event_url}")
         self._set_status("Checking and updating files...")
         self.update_thread = threading.Thread(target=self._run_update_worker, daemon=True)
         self.update_thread.start()
 
     def _run_update_worker(self):
         try:
+            version_info = FileCheck.get_version_info()
+            current_ver = version_info.get("current_version") or "unknown"
+            latest_ver = version_info.get("latest_version") or "unknown"
+
             result = FileCheck.run_update_flow(
                 auto_confirm=True,
-                preserve_local_winter=True,
+                preserve_local_winter=False,
                 print_fn=lambda *_args, **_kwargs: None,
             )
+
             if result["error"]:
-                message = f"Update error: {result['error']}"
+                message = (
+                    f"Current version: {current_ver}; "
+                    f"Latest version: {latest_ver}; "
+                    f"Update error: {result['error']}"
+                )
             else:
                 messages = []
+                messages.append(f"Current version: {current_ver}")
+                messages.append(f"Latest version: {latest_ver}")
+                if version_info.get("error"):
+                    messages.append(f"Version check warning: {version_info['error']}")
                 if result.get("updated_resources"):
                     messages.append("Resources updated")
                 if result.get("updated_winter"):
                     messages.append("Winter_Event.py updated")
                 if result.get("skipped_winter"):
                     messages.append("Winter_Event.py kept (local)")
+                if not result.get("updated_winter") and current_ver == latest_ver and current_ver != "unknown":
+                    messages.append("Winter_Event.py is already up to date")
+                post_ver = result.get("post_update_version")
+                if post_ver:
+                    messages.append(f"Installed version: {post_ver}")
                 if not messages:
                     messages.append("No updates needed")
                 message = "; ".join(messages)
