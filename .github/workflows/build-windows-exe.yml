@@ -22,7 +22,7 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pyinstaller pillow
+          python -m pip install pyinstaller pillow requests keyboard pyautogui pydirectinput pygetwindow
 
       - name: Build executable
         shell: pwsh
@@ -32,6 +32,13 @@ jobs:
             --clean `
             --windowed `
             --name LenivayaFigna `
+            --hidden-import LenivayaFigna `
+            --hidden-import Position `
+            --hidden-import Winter_Event `
+            --hidden-import Utility.FileCheck `
+            --hidden-import Tools.botTools `
+            --hidden-import Tools.winTools `
+            --hidden-import Tools.avMethods `
             --add-data "Main.py;." `
             --add-data "Position.py;." `
             --add-data "Winter_Event.py;." `

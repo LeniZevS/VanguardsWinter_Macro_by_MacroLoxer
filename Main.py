@@ -7,6 +7,22 @@ import urllib.request
 import zipfile
 import ctypes
 
+# PyInstaller note:
+# These scripts are executed via runpy from bundled files (data),
+# so we keep explicit optional imports here to help dependency discovery.
+try:
+    import glob  # noqa: F401
+    import subprocess  # noqa: F401
+    import threading  # noqa: F401
+    import tkinter  # noqa: F401
+except Exception:
+    pass
+
+try:
+    import requests  # noqa: F401
+except Exception:
+    pass
+
 
 IS_FROZEN = getattr(sys, "frozen", False)
 APP_DIR = os.path.dirname(sys.executable) if IS_FROZEN else os.path.dirname(os.path.abspath(__file__))
