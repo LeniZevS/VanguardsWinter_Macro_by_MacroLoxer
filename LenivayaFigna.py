@@ -1129,14 +1129,16 @@ class LenivayaFignaApp(tk.Tk):
             self._set_status("Global hotkeys are unavailable. Window hotkeys still work.")
 
     def _build_launch_command(self, script_path, capture_output=False):
+        # In frozen builds, always re-launch the same EXE in worker mode.
+        # This keeps PyInstaller paths consistent (_internal, bundled modules).
+        if IS_FROZEN:
+            return [sys.executable, os.path.basename(script_path)]
         if capture_output and _is_python_executable(self.python_exe):
             return [self.python_exe, "-u", script_path]
         if _is_python_executable(self.pythonw_exe):
             return [self.pythonw_exe, script_path]
         if _is_python_executable(self.python_exe):
             return [self.python_exe, script_path]
-        if IS_FROZEN:
-            return [sys.executable, os.path.basename(script_path)]
         return [sys.executable, script_path]
 
     def _build_worker_env(self, script_path, capture_output=False):
